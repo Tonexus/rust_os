@@ -8,6 +8,7 @@ kernel := build/kernel.elf
 kernel_rust := target/i686-rust-os/debug/librust_os.a
 asm_srcs := $(wildcard src/*.s)
 asm_objs := $(patsubst src/%.s, build/%.o, $(asm_srcs))
+rust_srcs := $(wildcard src/*.rs)
 
 .PHONY: kernel_rust build
 
@@ -21,6 +22,6 @@ build/%.o: src/%.s
 
 kernel_rust: $(kernel_rust)
 
-$(kernel_rust): src/lib.rs $(target)
+$(kernel_rust): $(rust_srcs) $(target)
 	cargo xbuild --target $(target)
 
