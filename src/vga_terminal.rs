@@ -1,3 +1,10 @@
+// basic vga text driver
+
+use core::fmt;
+use volatile::Volatile;
+use spin::Mutex;
+use lazy_static::lazy_static;
+
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -42,11 +49,12 @@ const BUFFER_W: usize = 80;
 
 #[repr(transparent)]
 struct VgaBuffer {
-    chars: [[VgaChar; BUFFER_W]; BUFFER_H],
+    chars: [[Volatile<VgaChar>; BUFFER_W]; BUFFER_H],
 }
 
 pub struct Terminal {
-    column: usize,
+    row: usize,
+    col: usize,
     color: ColorCode,
     buffer: &'static mut VgaBuffer,
 }
@@ -55,31 +63,45 @@ impl Terminal {
     pub fn clear(&mut self) {
         for i in 0..BUFFER_H {
             for j in 0..BUFFER_W {
-                self.buffer.chars[i][j] = VgaChar {
+                self.buffer.chars[i][j].write(VgaChar {
                     ascii: b' ',
                     color: self.color,
-                }
+                });
             }
         }
     }
 
     fn new_line(&mut self) {
-        // TODO
+        self.row += 1;
+        self.col = 0;
+        if self.row >= BUFFER_H {
+            for i in 0..BUFFER_H-1 {
+                for j in 0..BUFFER_W {
+                    self.buffer.chars[i][j].write(self.buffer.chars[i+1][j].read());
+                }
+            }
+            for j in 0..BUFFER_W {
+                self.buffer.chars[BUFFER_H-1][j].write(VgaChar {
+                    ascii: b' ',
+                    color: self.color,
+                });
+            }
+        }
     }
 
     pub fn print_char(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
             byte => {
-                if self.column >= BUFFER_W {
+                if self.col >= BUFFER_W {
                     self.new_line();
                 }
 
-                self.buffer.chars[BUFFER_H-1][self.column] = VgaChar {
+                self.buffer.chars[self.row][self.col].write(VgaChar {
                     ascii: byte,
                     color: self.color,
-                };
-                self.column += 1;
+                });
+                self.col += 1;
             }
         }
     }
@@ -91,13 +113,46 @@ impl Terminal {
     }
 }
 
-pub fn print_something() {
-    let mut terminal = Terminal {
-        column: 0,
+impl fmt::Write for Terminal {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.print_str(s);
+        Ok(())
+    }
+}
+
+lazy_static! {
+    pub static ref TERMINAL: Mutex<Terminal> = Mutex::new(Terminal {
+        row: 0,
+        col: 0,
         color: ColorCode::new(Color::White, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut VgaBuffer) },
-    };
-    terminal.clear();
-    terminal.print_str("Hello world!");
+    });
+}
+
+#[doc(hidden)]
+pub fn _vga_print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    TERMINAL.lock().write_fmt(args).unwrap();
+}
+
+#[doc(hidden)]
+pub fn _vga_clear() {
+    TERMINAL.lock().clear();
+}
+
+#[macro_export]
+macro_rules! vga_print {
+    ($($arg:tt)*) => ($crate::vga_terminal::_vga_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! vga_println {
+    () => ($crate::vga_print!("\n"));
+    ($($arg:tt)*) => ($crate::vga_print!("{}\n", format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! vga_clear {
+    () => ($crate::vga_terminal::_vga_clear());
 }
 
