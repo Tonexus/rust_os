@@ -15,7 +15,6 @@ fn panic(info: &PanicInfo) -> ! {
 pub extern "C" fn kmain() -> ! {
     vga_clear!();
     vga_println!("I have {} {}", 5, "cats");
-    panic!("Bad");
 
     loop {}
 }

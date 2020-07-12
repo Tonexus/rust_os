@@ -3,25 +3,37 @@ AS := $(CC)
 ASFLAGS := -std=gnu99 -ffreestanding -c
 LDFLAGS := -ffreestanding -nostdlib -lgcc -Ttext 0x1000000
 
+BUILD := build
+SRC := src
+
 target := i686-rust-os.json
-kernel := build/kernel.elf
+rust_srcs := $(wildcard $(SRC)/*.rs)
 kernel_rust := target/i686-rust-os/debug/librust_os.a
-asm_srcs := $(wildcard src/*.s)
-asm_objs := $(patsubst src/%.s, build/%.o, $(asm_srcs))
-rust_srcs := $(wildcard src/*.rs)
+asm_srcs := $(wildcard $(SRC)/*.s)
+asm_objs := $(patsubst $(SRC)/%.s, $(BUILD)/%.o, $(asm_srcs))
+link_src := $(SRC)/linker.ld
+kernel := $(BUILD)/kernel.elf
 
-.PHONY: kernel_rust build
+.PHONY: all run rust clean
 
-build: $(kernel)
+all: $(kernel)
 
-$(kernel): $(kernel_rust) $(asm_objs) src/linker.ld
-	$(CC) $(LDFLAGS) -T src/linker.ld $(asm_objs) $(kernel_rust) -o $(kernel)
+run: $(kernel)
+	qemu-system-i386 -kernel $(kernel)
 
-build/%.o: src/%.s
+$(kernel): $(kernel_rust) $(asm_objs) $(link_src)
+	$(CC) $(LDFLAGS) -T $(link_src) $(asm_objs) $(kernel_rust) -o $(kernel)
+
+$(BUILD)/%.o: $(SRC)/%.s $(BUILD)
 	$(AS) $(ASFLAGS) $< -o $@
 
-kernel_rust: $(kernel_rust)
+$(BUILD):
+	mkdir -p $(BUILD)/
+
+rust: $(kernel_rust)
 
 $(kernel_rust): $(rust_srcs) $(target)
 	cargo xbuild --target $(target)
 
+clean:
+	rm -rf $(BUILD)/ target/
