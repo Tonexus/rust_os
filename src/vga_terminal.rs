@@ -32,7 +32,7 @@ pub enum Color {
 struct ColorCode(u8);
 
 impl ColorCode {
-    fn new(fg: Color, bg: Color) -> ColorCode {
+    const fn new(bg: Color, fg: Color) -> ColorCode {
         ColorCode((bg as u8) << 4 | (fg as u8))
     }
 }
@@ -46,6 +46,9 @@ struct VgaChar {
 
 const BUFFER_H: usize = 25;
 const BUFFER_W: usize = 80;
+const COLOR_DEFAULT: ColorCode = ColorCode::new(Color::Black, Color::White);
+// const COLOR_WARN: ColorCode = ColorCode::new(Color::Black, Color::Yellow);
+// const COLOR_ERROR: ColorCode = ColorCode::new(Color::Black, Color::Red);
 
 #[repr(transparent)]
 struct VgaBuffer {
@@ -55,17 +58,16 @@ struct VgaBuffer {
 pub struct Terminal {
     row: usize,
     col: usize,
-    color: ColorCode,
     buffer: &'static mut VgaBuffer,
 }
 
 impl Terminal {
-    pub fn clear(&mut self) {
+    fn clear(&mut self) {
         for i in 0..BUFFER_H {
             for j in 0..BUFFER_W {
                 self.buffer.chars[i][j].write(VgaChar {
                     ascii: b' ',
-                    color: self.color,
+                    color: COLOR_DEFAULT,
                 });
             }
         }
@@ -83,13 +85,13 @@ impl Terminal {
             for j in 0..BUFFER_W {
                 self.buffer.chars[BUFFER_H-1][j].write(VgaChar {
                     ascii: b' ',
-                    color: self.color,
+                    color: COLOR_DEFAULT,
                 });
             }
         }
     }
 
-    pub fn print_char(&mut self, byte: u8) {
+    fn print_char(&mut self, byte: u8, color: ColorCode) {
         match byte {
             b'\n' => self.new_line(),
             byte => {
@@ -99,23 +101,23 @@ impl Terminal {
 
                 self.buffer.chars[self.row][self.col].write(VgaChar {
                     ascii: byte,
-                    color: self.color,
+                    color: color,
                 });
                 self.col += 1;
             }
         }
     }
 
-    pub fn print_str(&mut self, s: &str) {
+    fn print_str(&mut self, s: &str, color: ColorCode) {
         for byte in s.bytes() {
-            self.print_char(byte);
+            self.print_char(byte, color);
         }
     }
 }
 
 impl fmt::Write for Terminal {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.print_str(s);
+        self.print_str(s, COLOR_DEFAULT);
         Ok(())
     }
 }
@@ -124,7 +126,6 @@ lazy_static! {
     pub static ref TERMINAL: Mutex<Terminal> = Mutex::new(Terminal {
         row: 0,
         col: 0,
-        color: ColorCode::new(Color::White, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut VgaBuffer) },
     });
 }

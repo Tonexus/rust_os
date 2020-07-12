@@ -10,7 +10,7 @@ fn panic(info: &PanicInfo) -> ! {
     loop {}
 }
 
-// rust entry point
+// rust kernel entry point
 #[no_mangle]
 pub extern "C" fn kmain() -> ! {
     vga_clear!();
