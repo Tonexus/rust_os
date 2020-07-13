@@ -1,6 +1,9 @@
 // basic vga text driver
+// exposes vga_print and vga_printl macros for basic formatted print
+// exposes vga_
 
 use core::fmt;
+use log::{Record, Level, Metadata, SetLoggerError, LevelFilter};
 use volatile::Volatile;
 use spin::Mutex;
 use lazy_static::lazy_static;
@@ -46,9 +49,12 @@ struct VgaChar {
 
 const BUFFER_H: usize = 25;
 const BUFFER_W: usize = 80;
+const TAB_W: usize = 4;
 const COLOR_DEFAULT: ColorCode = ColorCode::new(Color::Black, Color::White);
-// const COLOR_WARN: ColorCode = ColorCode::new(Color::Black, Color::Yellow);
-// const COLOR_ERROR: ColorCode = ColorCode::new(Color::Black, Color::Red);
+const COLOR_ERROR: ColorCode = ColorCode::new(Color::Black, Color::Red);
+const COLOR_WARN: ColorCode = ColorCode::new(Color::Black, Color::Yellow);
+const COLOR_DEBUG: ColorCode = ColorCode::new(Color::Black, Color::Green);
+const COLOR_TRACE: ColorCode = ColorCode::new(Color::Black, Color::Blue);
 
 #[repr(transparent)]
 struct VgaBuffer {
@@ -91,9 +97,17 @@ impl Terminal {
         }
     }
 
+    fn tab(&mut self) {
+        self.col = (self.col / TAB_W + 1) * TAB_W;
+        if self.col >= BUFFER_W {
+            self.new_line();
+        }
+    }
+
     fn print_char(&mut self, byte: u8, color: ColorCode) {
         match byte {
             b'\n' => self.new_line(),
+            b'\t' => self.tab(),
             byte => {
                 if self.col >= BUFFER_W {
                     self.new_line();
@@ -123,11 +137,47 @@ impl fmt::Write for Terminal {
 }
 
 lazy_static! {
-    pub static ref TERMINAL: Mutex<Terminal> = Mutex::new(Terminal {
-        row: 0,
-        col: 0,
-        buffer: unsafe { &mut *(0xb8000 as *mut VgaBuffer) },
+    pub static ref TERMINAL: Mutex<Terminal> = Mutex::new({
+        let t = Terminal {
+            row: 0,
+            col: 0,
+            buffer: unsafe { &mut *(0xb8000 as *mut VgaBuffer) },
+        };
+        t
     });
+}
+
+struct TerminalLogger;
+
+impl log::Log for TerminalLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= Level::Info
+    }
+
+    fn log(&self, record: &Record) {
+        use core::fmt::Write;
+        if self.enabled(record.metadata()) {
+            let mut terminal = TERMINAL.lock();
+            let (label, color) = match record.level() {
+                log::Level::Error => ("ERROR", COLOR_ERROR),
+                log::Level::Warn  => ("WARN ", COLOR_WARN),
+                log::Level::Info  => ("INFO ", COLOR_DEFAULT),
+                log::Level::Debug => ("DEBUG", COLOR_DEBUG),
+                log::Level::Trace => ("TRACE", COLOR_TRACE),
+            };
+            terminal.print_char(b'[', COLOR_DEFAULT);
+            terminal.print_str(label, color);
+            terminal.write_fmt(format_args!("]: {}", record.args())).unwrap();
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: TerminalLogger = TerminalLogger;
+
+pub fn init_logger() -> Result<(), SetLoggerError> {
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
 }
 
 #[doc(hidden)]
