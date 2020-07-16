@@ -18,6 +18,4 @@ pub extern "C" fn kmain() -> ! {
     log::info!("Kernel has started up\n");
     vga_println!("I have {} {}", 5, "cats");
     panic!("ded");
-
-    loop {}
 }
