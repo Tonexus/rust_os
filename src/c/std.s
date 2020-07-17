@@ -3,60 +3,52 @@
 	.text
 	
 	.align 16
-	.global	memset
-memset:
-	pushl	%ebp
-	movl	%esp, %ebp
-	pushl	%edi		## callee saved edi
-	movl	8(%ebp), %edx	## gets destination arg
-	movl	16(%ebp), %ecx	## gets count arg
-	movl	12(%ebp), %eax	## gets source value arg
-	movl	%edx, %edi
+	.global	memset2
+memset2:
+	movl	%edi, %edx	## callee saved edi
+	movl	4(%esp), %edi	## get destination arg
+	movl	8(%esp), %eax	## get source value arg
+	movl	12(%esp), %ecx	## get count arg
 	rep stosb		## repeat store byte
-	movl	-4(%ebp), %edi	## restore edi
-	movl	%edx, %eax	## set return value
-	leave
+	movl	%edx, %edi	## restore edi
+	movl	4(%esp), %eax	## set return value
 	ret
-	.size	memset, .-memset
+	.size	memset2, .-memset2
 
 	.align 16
-	.global	memcpy
-memcpy:
-	pushl	%ebp
-	movl	%esp, %ebp
-	pushl	%edi		## callee saved edi
-	movl	8(%ebp), %eax	## gets destination arg
-	movl	16(%ebp), %ecx	## gets count arg
-	pushl	%esi		## callee saved esi
-	movl	12(%ebp), %esi	## gets source arg
-	movl	%eax, %edi
+	.global	memcpy2
+memcpy2:
+	movl	%edi, %edx	## callee saved edi
+	movl	%esi, %eax	## callee saved esi
+	movl	4(%esp), %edi	## get destination arg
+	movl	8(%esp), %esi	## get source arg
+	movl	12(%esp), %ecx	## get count arg
 	rep movsb		## repeat move byte
-	popl	%esi		## restore esi
-	popl	%edi		## restore edi
-	popl	%ebp
+	movl	%eax, %esi	## restore esi
+	movl	%edx, %edi	## restore edi
+	movl	4(%esp), %eax	## set return value
 	ret
-	.size	memcpy, .-memcpy
+	.size	memcpy2, .-memcpy2
 
 	.align 16
-	.global	memcmp
-memcmp:
-	pushl	%ebp
-	xorl	%eax, %eax
-	movl	%esp, %ebp
-	pushl	%edi
-	movl	16(%ebp), %ecx
-	pushl	%esi
-	testl	%ecx, %ecx
+	.global	memcmp2
+memcmp2:
+	movl	12(%esp), %ecx	## get count arg
+	testl	%ecx, %ecx	## skip if count == 0
 	je	skip
-	movl	8(%ebp), %edi
-	movl	12(%ebp), %esi
-	repe cmpsb
-	movzbl	-1(%edi), %eax
-	movzbl	-1(%esi), %edx
-	subl	%edx, %eax
-skip:
-	popl	%esi
-	popl	%edi
-	popl	%ebp
+	movl	%edi, %edx	## callee saved edi
+	movl	%esi, %eax	## callee saved esi
+	movl	4(%esp), %edi	## get destination arg
+	movl	8(%esp), %esi	## get source arg
+	repe cmpsb		## repeat compare byte
+	movzbl	-1(%esi), %ecx	## get first unequal/last char of source
+	movl	%eax, %esi	## restore esi
+	movzbl	-1(%edi), %eax	## get first unequal/last char of destination
+	movl	%edx, %edi	## restore edi
+	subl	%ecx, %eax	## set return value
 	ret
-	.size	memcmp, .-memcmp
+	.align 16
+skip:
+	xorl	%eax, %eax	## set return value
+	ret
+	.size	memcmp2, .-memcmp2
