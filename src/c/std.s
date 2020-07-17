@@ -3,8 +3,8 @@
 	.text
 	
 	.align 16
-	.global	memset2
-memset2:
+	.global	memset
+memset:
 	movl	%edi, %edx	## callee saved edi
 	movl	4(%esp), %edi	## get destination arg
 	movl	8(%esp), %eax	## get source value arg
@@ -13,11 +13,10 @@ memset2:
 	movl	%edx, %edi	## restore edi
 	movl	4(%esp), %eax	## set return value
 	ret
-	.size	memset2, .-memset2
 
 	.align 16
-	.global	memcpy2
-memcpy2:
+	.global	memcpy
+memcpy:
 	movl	%edi, %edx	## callee saved edi
 	movl	%esi, %eax	## callee saved esi
 	movl	4(%esp), %edi	## get destination arg
@@ -28,11 +27,10 @@ memcpy2:
 	movl	%edx, %edi	## restore edi
 	movl	4(%esp), %eax	## set return value
 	ret
-	.size	memcpy2, .-memcpy2
 
 	.align 16
-	.global	memcmp2
-memcmp2:
+	.global	memcmp
+memcmp:
 	movl	12(%esp), %ecx	## get count arg
 	testl	%ecx, %ecx	## skip if count == 0
 	je	skip
@@ -51,4 +49,3 @@ memcmp2:
 skip:
 	xorl	%eax, %eax	## set return value
 	ret
-	.size	memcmp2, .-memcmp2

@@ -28,7 +28,7 @@ start:
 	mov	$stack_top, %esp
 	call	kmain
 
-// hang if kernel C ever returns
+// hang if kmain ever returns
 hang:
 	cli		// disable CPU interrupts
 	hlt		// halt CPU
