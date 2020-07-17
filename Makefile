@@ -1,10 +1,10 @@
 CC := i686-elf-gcc
-CFLAGS := -std=gnu99 -ffreestanding -O3 -Wall -c
+CFLAGS := -std=gnu99 -ffreestanding -flto -O3 -Wall -c
 AS := $(CC)
 ASFLAGS := $(CFLAGS)
 AR := $(CC)-ar
 ARFLAGS := rcs
-LDFLAGS := -ffreestanding -nostdlib -lgcc -Ttext 0x1000000
+LDFLAGS := -ffreestanding -flto -nostdlib -lgcc -Ttext 0x1000000
 
 C_SRC := src/c
 RUST_SRC := src/rust
@@ -19,7 +19,7 @@ rust_srcs := $(wildcard $(RUST_SRC)/*.rs)
 kernel_rust := $(BUILD)/rust.a
 asm_srcs := $(wildcard $(C_SRC)/*.s)
 asm_objs := $(patsubst $(C_SRC)/%.s, $(BUILD)/%.o, $(asm_srcs))
-c_std_src := $(C_SRC)/std.c # needs to be linked into rust
+c_std_src := $(C_SRC)/std.s # needs to be linked into rust
 c_srcs := $(wildcard $(C_SRC)/*.c)
 c_objs := $(patsubst $(C_SRC)/%.c, $(BUILD)/%.o, $(c_srcs))
 link_src := $(C_SRC)/linker.ld
@@ -50,8 +50,8 @@ $(kernel_rust): $(rust_srcs) $(c_std_src) $(rust_meta) $(inject_asm) $(target)
 	@cargo clean
 	@mkdir -p $(@D)
 	@mkdir -p $(RUST_ASM)
-	RUSTFLAGS="--emit asm" cargo build -Z build-std=core --target $(target)
-	python3 $(inject_asm) target/i686-rust-os/debug/deps/*.s $(RUST_ASM)
+	RUSTFLAGS="--emit asm" cargo build -Z build-std=core --release --target $(target)
+	python3 $(inject_asm) target/i686-rust-os/release/deps/*.s $(RUST_ASM)
 	@for file in $(RUST_ASM)/*.s; do \
 		echo "$(AS) $(ASFLAGS) $$file -o $${file%.s}.o"; \
 		$(AS) $(ASFLAGS) $$file -o $${file%.s}.o; \
