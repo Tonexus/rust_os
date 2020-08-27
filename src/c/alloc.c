@@ -28,7 +28,7 @@ struct chunk_entry {
   uintptr_t max;
   uint32_t  fsize;              // bytes remaining in chunk
   uint8_t   fmap[BYTEMAP_SIZE]; // byte map of free space, 0 = free
-}
+};
 
 struct alloc_entry {
   uint32_t flags;
@@ -42,29 +42,26 @@ struct alloc_entry {
   struct chunk_entry* utail;  // points to tail of in-use list
   struct chunk_entry* fhead;  // points to head of free list
   struct chunk_entry chunk_table[MAX_CHUNKS];
-}
+};
 
 struct alloc_tree {
   uint32_t nallocs;
   struct alloc_entry* uroot; // points to root of in-use tree
   struct alloc_entry* fhead; // points to head of free list
   struct alloc_entry alloc_table[MAX_ALLOCS];
-}
+};
 
-static struct alloc_tree* g_alloc_tree = (static struct alloc_tree*) MEM_TABLE;
-
-static struct alloc_entry* alloc_table = (static struct alloc_entry*) MEM_TABLE;
-static uint32_t nallocs = 0;
+static struct alloc_tree* g_alloc_tree = (struct alloc_tree*) MEM_TABLE;
 
 /* inserts a new allocator entry into the global allocator tree.
- * returns 1 if successful, 0 if failure
+ * returns the new alloc_entry if successful, NULL if failure
  */
-uint32_t insert_alloc(struct alloc_entry* parent, uint32_t align) {
+struct alloc_entry* insert_alloc(struct alloc_entry* parent, uint32_t align) {
   // pop head from free list
   struct alloc_entry* alloc = g_alloc_tree->fhead;
   if (alloc == NULL) {
     // fail if free list empty
-    return 0;
+    return NULL;
   }
   // TODO do we even need to track root?
   // check if adding new root
@@ -74,7 +71,7 @@ uint32_t insert_alloc(struct alloc_entry* parent, uint32_t align) {
       g_alloc_tree->uroot = alloc;
     } else {
       // fail if adding root, but root already exists
-      return 0;
+      return NULL;
     }
   }
   g_alloc_tree->fhead = alloc->parent;
@@ -96,7 +93,7 @@ uint32_t insert_alloc(struct alloc_entry* parent, uint32_t align) {
     chunk->next  = (i == MAX_CHUNKS - 1) ? NULL : alloc->chunk_table + i + 1;
   }
   g_alloc_tree->nallocs += 1;
-  return 1;
+  return alloc;
 }
 
 /* inserts a new chunk entry to the specified allocator entry.
@@ -118,7 +115,7 @@ uint32_t insert_chunk(struct alloc_entry* alloc, uintptr_t min, uintptr_t max) {
   chunk->min   = min;
   chunk->max   = max;
   chunk->fsize = max - min;
-  chunk->fmap  = {0};
+  memset(chunk->fmap, 0, BYTEMAP_SIZE);
 
   // append to in-use list
   if (alloc->uhead == NULL) {
@@ -142,23 +139,23 @@ void init_alloc_tree() {
   for (uint32_t i = 0; i < MAX_ALLOCS; i++) {
     struct alloc_entry* alloc = g_alloc_tree->alloc_table + i;
     alloc->flags  = 0;
-    alloc->parent = (i == MAX_ALLOCS - 1) ? : NULL : g_alloc_tree->alloc_table + i + 1;
+    alloc->parent = (i == MAX_ALLOCS - 1) ? NULL : g_alloc_tree->alloc_table + i + 1;
   }
 
   // add top level allocator
-  insert_alloc(NULL, BIG_SIZE);
+  struct alloc_entry* alloc = insert_alloc(NULL, BIG_SIZE);
   // owns single chunk of memory = all memory
-  insert_chunk(alloc_table, MEM_MIN, MEM_MAX);
+  insert_chunk(alloc, MEM_MIN, MEM_MAX);
 }
 
 // main allocate method
-void* allocate(struct alloc_entry* alloc, uint32_t size, uint32_t align) {
+void* allocate_internal(struct alloc_entry* alloc, uint32_t size, uint32_t align) {
   if (alloc == NULL) {
     // if no allocator specified, fails
     return NULL;
   }
 
-  if (align == 0 || align & (align - 1) != 0) {
+  if (align == 0 || (align & (align - 1)) != 0) {
     // if align is not a power of 2, fails
     return NULL;
   }
@@ -167,7 +164,7 @@ void* allocate(struct alloc_entry* alloc, uint32_t size, uint32_t align) {
   if (size > alloc->fsize) {
     uint32_t csize = size << 1; // size to allocate for new chunk // TODO overflow checking?
     // TODO just round up to power of 2?
-    uintptr_t new_mem = (uintptr_t) allocate(alloc->parent, csize, align);
+    uintptr_t new_mem = (uintptr_t) allocate_internal(alloc->parent, csize, align);
     if (new_mem) {
       if (insert_chunk(alloc, new_mem, new_mem + csize)) {
         // TODO finalize allocation
@@ -184,7 +181,7 @@ void* allocate(struct alloc_entry* alloc, uint32_t size, uint32_t align) {
   }
 
   // get number of necessary adjacent cells in bytemap
-  uint32_t fcount = (size + allocator->align - 1) & -allocator->align;
+  uint32_t fcount = (size + alloc->align - 1) & -alloc->align;
   // for chunk in chunk list
   for (struct chunk_entry* chunk = alloc->uhead; chunk != NULL; chunk = chunk->next) {
     uint32_t contig = 0; // counts contiguous memory areas of size allocator->align
@@ -198,35 +195,31 @@ void* allocate(struct alloc_entry* alloc, uint32_t size, uint32_t align) {
         // reset contiguous counter
         contig = 0;
       }
-      // check if enough contiguuous memory found
-      if (contig * allocator->align >= size) {
+      // check if enough contiguous memory found
+      if (contig >= fcount) {
         // mark as used
         for (uint32_t j = i - contig + 1; j <= i; j++) {
           chunk->fmap[j] = 1;
         }
         // decrease free mem counters
-        chunk->fsize -= contig * allocator->align;
-        alloc->fsize -= contig * allocator->align;
+        chunk->fsize -= contig * alloc->align;
+        alloc->fsize -= contig * alloc->align;
         return (void*) (chunk->min + alloc->align * (i - contig + 1));
       }
     }
   }
 
   // could not find free space, so request parent
-  void* new_mem = allocate(allocator->parent, size << 2, align);
+  void* new_mem = allocate_internal(alloc->parent, size << 2, align);
   if (new_mem) {
     // TODO add to chunk list and finalize allocation
+    return NULL;
   } else {
     return NULL;
   }
 }
 
-void* allocate(uint32_t size, uint32_t align) {
-  void* out = (void*) (((uintptr_t) memptr + align - 1) & -align);
-  if ((uintptr_t) out + size < (uintptr_t) MEM_MAX) {
-    memptr = (void*) ((uintptr_t) out + size);
-    return out;
-  }
+/*void* allocate(uint32_t size, uint32_t align) {
   return NULL;
 }
 
@@ -252,6 +245,6 @@ void* reallocate(void* ptr, uint32_t old_size, uint32_t size, uint32_t align) {
 
 void deallocate(void* ptr, uint32_t old_size, uint32_t align) {}
 
-uint32_t usable_size(uint32_t size, uint32_align) {
+uint32_t usable_size(uint32_t size, uint32_t align) {
   return size;
-}
+}*/
